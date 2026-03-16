@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import cors from '@fastify/cors'
 import dotenv from 'dotenv'
 import prismaPlugin from './plugins/prisma'
 import authRoutes from './routes/auth.routes'
@@ -8,6 +9,7 @@ dotenv.config()
 
 const app = Fastify({ logger: true })
 
+app.register(cors, { origin: '*' })
 app.register(prismaPlugin)
 app.register(authRoutes)
 app.register(flightRoutes)
