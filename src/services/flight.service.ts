@@ -1,41 +1,7 @@
-const mockFlights = [
-  {
-    id: '1',
-    airline: 'Lufthansa',
-    airlineCode: 'LH',
-    flightNumber: 'LH 760',
-    departsAt: '09:15',
-    arrivesAt: '22:45',
-    duration: '11h 30m',
-    stopsCount: 0,
-    pricePerPax: 287,
-    deepLink: 'https://www.lufthansa.com'
-  },
-  {
-    id: '2',
-    airline: 'Thai Airways',
-    airlineCode: 'TG',
-    flightNumber: 'TG 920',
-    departsAt: '13:40',
-    arrivesAt: '06:35',
-    duration: '14h 55m',
-    stopsCount: 1,
-    pricePerPax: 241,
-    deepLink: 'https://www.thaiairways.com'
-  },
-  {
-    id: '3',
-    airline: 'Emirates',
-    airlineCode: 'EK',
-    flightNumber: 'EK 048',
-    departsAt: '21:30',
-    arrivesAt: '12:15',
-    duration: '13h 45m',
-    stopsCount: 1,
-    pricePerPax: 310,
-    deepLink: 'https://www.emirates.com'
-  }
-]
+import 'dotenv/config'
+import axios from 'axios'
+
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || ''
 
 export async function searchFlights(
   origin: string,
@@ -43,14 +9,82 @@ export async function searchFlights(
   date: string,
   paxCount: number
 ) {
-  // Später durch echten Amadeus/Kiwi API-Call ersetzen
-  await new Promise(r => setTimeout(r, 800)) // Simuliert API-Latenz
+  const legs = [{ origin, destination, date }]
 
-  return mockFlights.map(f => ({
-    ...f,
-    totalPrice: f.pricePerPax * paxCount,
-    origin,
-    destination,
-    date
-  }))
+  const response = await axios.get('https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlightsMultiStops', {
+    params: {
+      legs: JSON.stringify(legs),
+      adults: paxCount,
+      currency: 'EUR',
+      countryCode: 'DE',
+      market: 'de-DE',
+      cabinClass: 'economy',
+      sortBy: 'best'
+    },
+    headers: {
+      'x-rapidapi-host': 'sky-scrapper.p.rapidapi.com',
+      'x-rapidapi-key': RAPIDAPI_KEY
+    }
+  })
+
+  const itineraries = response.data?.data?.itineraries || []
+
+  return itineraries.slice(0, 5).map((item: any, index: number) => {
+    const leg = item.legs?.[0]
+    const segment = leg?.segments?.[0]
+    return {
+      id: item.id || String(index),
+      airline: leg?.carriers?.marketing?.[0]?.name || 'Unbekannt',
+      airlineCode: leg?.carriers?.marketing?.[0]?.alternateId || '??',
+      flightNumber: segment?.flightNumber || '',
+      departsAt: leg?.departure?.split('T')[1]?.slice(0, 5) || '',
+      arrivesAt: leg?.arrival?.split('T')[1]?.slice(0, 5) || '',
+      duration: `${Math.floor((leg?.durationInMinutes || 0) / 60)}h ${(leg?.durationInMinutes || 0) % 60}m`,
+      stopsCount: leg?.stopCount || 0,
+      pricePerPax: Math.round((item.price?.raw || 0) / paxCount),
+      totalPrice: Math.round(item.price?.raw || 0),
+      deepLink: `https://www.skyscanner.de/transport/flights/${origin}/${destination}/${date}/`
+    }
+  })
+}
+
+export async function searchFlightsMultiStop(
+  stops: { origin: string, destination: string, date: string }[],
+  paxCount: number
+) {
+  const response = await axios.get('https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlightsMultiStops', {
+    params: {
+      legs: JSON.stringify(stops),
+      adults: paxCount,
+      currency: 'EUR',
+      countryCode: 'DE',
+      market: 'de-DE',
+      cabinClass: 'economy',
+      sortBy: 'best'
+    },
+    headers: {
+      'x-rapidapi-host': 'sky-scrapper.p.rapidapi.com',
+      'x-rapidapi-key': RAPIDAPI_KEY
+    }
+  })
+
+  const itineraries = response.data?.data?.itineraries || []
+
+  return itineraries.slice(0, 5).map((item: any, index: number) => {
+    const leg = item.legs?.[0]
+    const segment = leg?.segments?.[0]
+    return {
+      id: item.id || String(index),
+      airline: leg?.carriers?.marketing?.[0]?.name || 'Unbekannt',
+      airlineCode: leg?.carriers?.marketing?.[0]?.alternateId || '??',
+      flightNumber: segment?.flightNumber || '',
+      departsAt: leg?.departure?.split('T')[1]?.slice(0, 5) || '',
+      arrivesAt: leg?.arrival?.split('T')[1]?.slice(0, 5) || '',
+      duration: `${Math.floor((leg?.durationInMinutes || 0) / 60)}h ${(leg?.durationInMinutes || 0) % 60}m`,
+      stopsCount: leg?.stopCount || 0,
+      pricePerPax: Math.round((item.price?.raw || 0) / paxCount),
+      totalPrice: Math.round(item.price?.raw || 0),
+      deepLink: `https://www.skyscanner.de`
+    }
+  })
 }
