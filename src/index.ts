@@ -1,7 +1,14 @@
-// src/index.ts
 import Fastify from 'fastify'
+import dotenv from 'dotenv'
+import prismaPlugin from './plugins/prisma'
+import authRoutes from './routes/auth.routes'
+
+dotenv.config()
 
 const app = Fastify({ logger: true })
+
+app.register(prismaPlugin)
+app.register(authRoutes)
 
 app.get('/health', async () => {
   return { status: 'ok', app: 'roamly-backend' }
