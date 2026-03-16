@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  displayName   String?
+  passwordHash  String?
+  oauthProvider String?
+  homeAirport   String?
+  currency      String   @default("EUR")
+  createdAt     DateTime @default(now())
+  trips         Trip[]
+  alerts        PriceAlert[]
+  bookings      Booking[]
+  sessions      Session[]
+}
+
+model Trip {
+  id          String     @id @default(uuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  status      String     @default("draft")
+  startDate   DateTime?
+  endDate     DateTime?
+  totalBudget Float?
+  currency    String     @default("EUR")
+  paxCount    Int        @default(1)
+  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime   @default(now())
+  stops       TripStop[]
+  flights     Flight[]
+  bookings    Booking[]
+  alerts      PriceAlert[]
+}
+
+model TripStop {
+  id            String    @id @default(uuid())
+  tripId        String
+  trip          Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  position      Int
+  iataCode      String
+  cityName      String
+  countryCode   String?
+  arrivalDate   DateTime?
+  departureDate DateTime?
+  lat           Float?
+  lng           Float?
+  hotels        Hotel[]
+  flightsFrom   Flight[]  @relation("FromStop")
+  flightsTo     Flight[]  @relation("ToStop")
+}
+
+model Flight {
+  id           String   @id @default(uuid())
+  tripId       String
+  trip         Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromStopId   String
+  fromStop     TripStop @relation("FromStop", fields: [fromStopId], references: [id])
+  toStopId     String
+  toStop       TripStop @relation("ToStop", fields: [toStopId], references: [id])
+  provider     String
+  airlineCode  String?
+  flightNumber String?
+  departsAt    DateTime
+  arrivesAt    DateTime
+  pricePerPax  Float
+  stopsCount   Int      @default(0)
+  isSelected   Boolean  @default(false)
+  deepLink     String?
+  cachedAt     DateTime @default(now())
+}
+
+model Hotel {
+  id             String   @id @default(uuid())
+  stopId         String
+  stop           TripStop @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  provider       String
+  externalId     String
+  name           String
+  stars          Int?
+  pricePerNight  Float
+  totalPrice     Float
+  rating         Float?
+  isSelected     Boolean  @default(false)
+  deepLink       String?
+  cachedAt       DateTime @default(now())
+}
+
+model PriceAlert {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId       String
+  trip         Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  originIata   String
+  destIata     String
+  targetPrice  Float
+  currentPrice Float?
+  isActive     Boolean   @default(true)
+  triggeredAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model Booking {
+  id          String   @id @default(uuid())
+  tripId      String
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
+  provider    String
+  providerRef String?
+  amountPaid  Float
+  status      String   @default("pending")
+  bookedAt    DateTime @default(now())
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  deviceInfo   String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
