@@ -1,7 +1,26 @@
-import 'dotenv/config'
 import axios from 'axios'
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || ''
+const DUFFEL_BASE_URL = 'https://api.duffel.com'
+
+function getDuffelHeaders() {
+  return {
+    Authorization: `Bearer ${process.env.DUFFEL_API_KEY}`,
+    'Duffel-Version': 'v2',
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+}
+
+function parseDuration(iso: string): string {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
+  const h = match?.[1] || '0'
+  const m = match?.[2] || '0'
+  return `${h}h ${m}m`
+}
+
+function formatTime(datetime: string): string {
+  return datetime?.split('T')[1]?.slice(0, 5) || ''
+}
 
 export async function searchFlights(
   origin: string,
@@ -9,82 +28,102 @@ export async function searchFlights(
   date: string,
   paxCount: number
 ) {
-  const legs = [{ origin, destination, date }]
+  const passengers = Array.from({ length: paxCount }, () => ({ type: 'adult' }))
 
-  const response = await axios.get('https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlightsMultiStops', {
-    params: {
-      legs: JSON.stringify(legs),
-      adults: paxCount,
-      currency: 'EUR',
-      countryCode: 'DE',
-      market: 'de-DE',
-      cabinClass: 'economy',
-      sortBy: 'best'
+  const response = await axios.post(
+    `${DUFFEL_BASE_URL}/air/offer_requests?return_offers=true`,
+    {
+      data: {
+        slices: [{ origin, destination, departure_date: date }],
+        passengers,
+        cabin_class: 'economy',
+      },
     },
-    headers: {
-      'x-rapidapi-host': 'sky-scrapper.p.rapidapi.com',
-      'x-rapidapi-key': RAPIDAPI_KEY
-    }
-  })
+    { headers: getDuffelHeaders() }
+  )
 
-  const itineraries = response.data?.data?.itineraries || []
+  const offers: any[] = response.data?.data?.offers || []
 
-  return itineraries.slice(0, 5).map((item: any, index: number) => {
-    const leg = item.legs?.[0]
-    const segment = leg?.segments?.[0]
+  return offers.slice(0, 5).map((offer: any, index: number) => {
+    const slice = offer.slices?.[0]
+    const firstSegment = slice?.segments?.[0]
+    const stopsCount = (slice?.segments?.length || 1) - 1
+
+    const segments = (slice?.segments || []).map((seg: any) => ({
+      origin: seg.origin?.iata_code || '',
+      originCity: seg.origin?.city_name || seg.origin?.name || '',
+      destination: seg.destination?.iata_code || '',
+      destinationCity: seg.destination?.city_name || seg.destination?.name || '',
+      departsAt: formatTime(seg.departing_at),
+      arrivesAt: formatTime(seg.arriving_at),
+      duration: parseDuration(seg.duration || 'PT0H'),
+      flightNumber: `${seg.marketing_carrier?.iata_code || ''} ${seg.marketing_carrier_flight_number || ''}`.trim(),
+      airline: seg.marketing_carrier?.name || '',
+    }))
+
     return {
-      id: item.id || String(index),
-      airline: leg?.carriers?.marketing?.[0]?.name || 'Unbekannt',
-      airlineCode: leg?.carriers?.marketing?.[0]?.alternateId || '??',
-      flightNumber: segment?.flightNumber || '',
-      departsAt: leg?.departure?.split('T')[1]?.slice(0, 5) || '',
-      arrivesAt: leg?.arrival?.split('T')[1]?.slice(0, 5) || '',
-      duration: `${Math.floor((leg?.durationInMinutes || 0) / 60)}h ${(leg?.durationInMinutes || 0) % 60}m`,
-      stopsCount: leg?.stopCount || 0,
-      pricePerPax: Math.round((item.price?.raw || 0) / paxCount),
-      totalPrice: Math.round(item.price?.raw || 0),
-      deepLink: `https://www.skyscanner.de/transport/flights/${origin}/${destination}/${date}/`
+      id: offer.id || String(index),
+      airline: offer.owner?.name || 'Unbekannt',
+      airlineCode: offer.owner?.iata_code || '??',
+      flightNumber: `${firstSegment?.marketing_carrier?.iata_code || ''} ${firstSegment?.marketing_carrier_flight_number || ''}`.trim(),
+      departsAt: formatTime(firstSegment?.departing_at),
+      arrivesAt: formatTime(slice?.segments?.[slice.segments.length - 1]?.arriving_at),
+      duration: parseDuration(slice?.duration || 'PT0H'),
+      stopsCount,
+      segments,
+      pricePerPax: Math.round(parseFloat(offer.total_amount || '0') / paxCount),
+      totalPrice: Math.round(parseFloat(offer.total_amount || '0')),
+      logoUrl: `https://logos.skyscnr.com/images/airlines/favicon/${offer.owner?.iata_code}.png`,
+      deepLink: offer.booking_url || 'https://www.duffel.com',
+      origin,
+      destination,
+      date,
     }
   })
 }
 
 export async function searchFlightsMultiStop(
-  stops: { origin: string, destination: string, date: string }[],
+  stops: { origin: string; destination: string; date: string }[],
   paxCount: number
 ) {
-  const response = await axios.get('https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlightsMultiStops', {
-    params: {
-      legs: JSON.stringify(stops),
-      adults: paxCount,
-      currency: 'EUR',
-      countryCode: 'DE',
-      market: 'de-DE',
-      cabinClass: 'economy',
-      sortBy: 'best'
+  const passengers = Array.from({ length: paxCount }, () => ({ type: 'adult' }))
+
+  const response = await axios.post(
+    `${DUFFEL_BASE_URL}/air/offer_requests?return_offers=true`,
+    {
+      data: {
+        slices: stops.map((s) => ({
+          origin: s.origin,
+          destination: s.destination,
+          departure_date: s.date,
+        })),
+        passengers,
+        cabin_class: 'economy',
+      },
     },
-    headers: {
-      'x-rapidapi-host': 'sky-scrapper.p.rapidapi.com',
-      'x-rapidapi-key': RAPIDAPI_KEY
-    }
-  })
+    { headers: getDuffelHeaders() }
+  )
 
-  const itineraries = response.data?.data?.itineraries || []
+  const offers: any[] = response.data?.data?.offers || []
 
-  return itineraries.slice(0, 5).map((item: any, index: number) => {
-    const leg = item.legs?.[0]
-    const segment = leg?.segments?.[0]
+  return offers.slice(0, 5).map((offer: any, index: number) => {
+    const slice = offer.slices?.[0]
+    const firstSegment = slice?.segments?.[0]
+    const stopsCount = (slice?.segments?.length || 1) - 1
+
     return {
-      id: item.id || String(index),
-      airline: leg?.carriers?.marketing?.[0]?.name || 'Unbekannt',
-      airlineCode: leg?.carriers?.marketing?.[0]?.alternateId || '??',
-      flightNumber: segment?.flightNumber || '',
-      departsAt: leg?.departure?.split('T')[1]?.slice(0, 5) || '',
-      arrivesAt: leg?.arrival?.split('T')[1]?.slice(0, 5) || '',
-      duration: `${Math.floor((leg?.durationInMinutes || 0) / 60)}h ${(leg?.durationInMinutes || 0) % 60}m`,
-      stopsCount: leg?.stopCount || 0,
-      pricePerPax: Math.round((item.price?.raw || 0) / paxCount),
-      totalPrice: Math.round(item.price?.raw || 0),
-      deepLink: `https://www.skyscanner.de`
+      id: offer.id || String(index),
+      airline: offer.owner?.name || 'Unbekannt',
+      airlineCode: offer.owner?.iata_code || '??',
+      flightNumber: `${firstSegment?.marketing_carrier?.iata_code || ''} ${firstSegment?.marketing_carrier_flight_number || ''}`.trim(),
+      departsAt: formatTime(firstSegment?.departing_at),
+      arrivesAt: formatTime(slice?.segments?.[slice.segments.length - 1]?.arriving_at),
+      duration: parseDuration(slice?.duration || 'PT0H'),
+      stopsCount,
+      pricePerPax: Math.round(parseFloat(offer.total_amount || '0') / paxCount),
+      totalPrice: Math.round(parseFloat(offer.total_amount || '0')),
+      logoUrl: `https://logos.skyscnr.com/images/airlines/favicon/${offer.owner?.iata_code}.png`,
+      deepLink: offer.booking_url || 'https://www.duffel.com',
     }
   })
 }
